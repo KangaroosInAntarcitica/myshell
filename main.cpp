@@ -5,9 +5,13 @@
 #include <vector>
 
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include <boost/filesystem.hpp>
+#include <readline/readline.h>
+#include <readline/history.h>
 
+extern char** environ;
 
 bool testWildCard(std::string& str, std::string& wildCard, size_t strI, size_t wildCardI) {
     for (;strI < str.size() && wildCardI < wildCard.size(); ++strI, ++wildCardI) {
@@ -44,6 +48,31 @@ bool testWildCard(std::string& str, std::string& wildCard, size_t strI, size_t w
     }
 
     return strI == str.size() && wildCardI == wildCard.size();
+}
+
+char** convertToCArgs(std::vector<std::string> variables) {
+    char** result = new char*[variables.size() + 1];
+
+    for (size_t i = 0; i < variables.size(); ++i) {
+        result[i] = new char[variables[i].length() + 1];
+        for (size_t c = 0; c < variables[i].length(); ++c) {
+            result[i][c] = variables[i][c];
+        }
+        result[i][variables[i].length()] = '\0';
+    }
+    result[variables.size()] = nullptr;
+
+    return result;
+};
+
+char** convertToCVariables(std::unordered_map<std::string, std::string> variables) {
+    std::vector<std::string> variableStrings{variables.size()};
+    size_t i = 0;
+    for (auto &element: variables) {
+        variableStrings[i++] = element.first + "=" + element.second;
+    }
+
+    return convertToCArgs(variableStrings);
 }
 
 bool testWildCard(std::string str, std::string wildCard) {
@@ -87,19 +116,37 @@ class MyShell {
     using variables_t = std::unordered_map<std::string, std::string>;
 
     variables_t variables;
-    variables_t env_variables;
-    boost::filesystem::path working_dir;
-    int errno;
-
-    bool doesDirectoryExist();
-    bool doesFileExist();
-    std::vector<std::string> listDirectory();
+    variables_t envVariables;
+    std::string workingDir;
+    int errorno = 0;
 
 public:
     MyShell() {
-        working_dir = boost::filesystem::current_path();
-        env_variables["PATH"] = working_dir.string() + ":";
+        workingDir = boost::filesystem::current_path().string() + "/";
+
+        for (size_t i = 0; environ[i] != nullptr; ++i) {
+            assignVariable(environ[i], envVariables);
+        }
+        envVariables["PATH"] = envVariables["PATH"] + ":" + workingDir;
     };
+
+    void run() {
+        char *s;
+
+        std::string printString = workingDir + " > ";
+        while ((s = readline(printString.c_str())) != NULL) {
+            add_history(s);
+
+            try {
+                executeSingleCommand(s);
+            } catch(std::exception &e) {
+                std::cout << e.what() << std::endl;
+            }
+
+            free(s);
+            printString = workingDir + " > ";
+        }
+    }
 
     std::vector<std::string> splitCommandIntoParts(std::string line) {
         line = line + ' ';
@@ -137,7 +184,14 @@ public:
                 part = std::ostringstream();
 
                 if (!partString.empty()) {
-                    if (quotes != '\'' && isWildCard(partString)) {
+                    if (quotes != '\'' && partString[0] == '$') {
+                        std::string key = partString.substr(1);
+                        std::string value;
+                        value = envVariables[key];
+                        if (value.empty()) value = variables[key];
+                        if (!value.empty()) lineParts.push_back(value);
+                    }
+                    else if (quotes != '\'' && isWildCard(partString)) {
                         std::vector<std::string> expandedPart = expandWildCard(partString);
                         lineParts.insert(lineParts.end(), expandedPart.begin(), expandedPart.end());
                     }
@@ -154,11 +208,161 @@ public:
         return lineParts;
     };
 
-    void executeSingleCommand(std::string line) {
-        std::cout << line << std::endl;
-        std::vector<std::string> lineParts = splitCommandIntoParts(line);
+    void printHelp(std::string command) {
+        if (command == "mexport") std::cout << "mexport <var_name>[=VAL]\nStores the value as global variable";
+        else if (command == "merrno") std::cout << "merrno [-h|--help] – display the end code of the last program or command";
+        else if (command == "mpwd") std::cout << "mpwd [-h|--help] – display current path";
+        else if (command == "mcd") std::cout << "mcd <path> [-h|--help]  - change path to <path>";
+        else if (command == "mexit") std::cout << "mexit [exit code] [-h|--help]  – exit from myshell with [exit code]";
+        else if (command == "mecho") std::cout << "mecho [text|$<var_name>] [text|$<var_name>]  [text|$<var_name>] - print arguments";
 
-        for (auto part: lineParts) std::cout << part << std::endl;
+        std::cout << std::endl;
+    };
+
+    bool isHelpPrint(std::vector<std::string> lineParts) {
+        for (auto part: lineParts) {
+            if (part == "-h" || part == "--help") {
+                printHelp(lineParts[0]);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    void assignVariable(std::string command, variables_t& variables) {
+        size_t equalPos;
+        if ((equalPos = command.find('=')) != std::string::npos) {
+            if (equalPos == 0)
+                throw std::runtime_error("No variable name given");
+            std::string key = command.substr(0, equalPos);
+            std::string value = command.substr(equalPos + 1);
+
+            if (value[0] == '$') {
+                std::string replaceKey = value.substr(1);
+                value = envVariables[replaceKey];
+                if (value.empty()) value = variables[replaceKey];
+            }
+            variables[key] = value;
+        }
+        else {
+            throw std::runtime_error("Assignment should include equals sign");
+        }
+    }
+
+    void execute(std::string path, std::vector<std::string> arguments) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            throw std::runtime_error("Could not start new process");
+        }
+        else if (pid > 0) {
+            waitpid(pid, &errorno, 0);
+            errorno >>= 8;
+        }
+        else {
+            char** argumentsString = convertToCArgs(arguments);
+            char** variablesString = convertToCVariables(envVariables);
+            execve(path.c_str(), (char **) argumentsString, (char **) variablesString);
+        }
+    }
+
+    void executeSingleCommand(std::string line) {
+        std::vector<std::string> lineParts = splitCommandIntoParts(line);
+        if (lineParts.empty()) return;
+
+        std::string command = lineParts[0];
+        if (command == "mexport") {
+            if (isHelpPrint(lineParts)) return;
+            else if (lineParts.size() == 1 || lineParts.size() > 2)
+                throw std::runtime_error("Invalid number of arguments");
+            assignVariable(lineParts[1], envVariables);
+        }
+        else if (command.find('=') != std::string::npos) {
+            if (isHelpPrint(lineParts)) return;
+            if (lineParts.size() > 1) throw std::runtime_error("Invalid number of arguments");
+            assignVariable(lineParts[0], variables);
+        }
+        else if (command == "merrno") {
+            if (isHelpPrint(lineParts)) return;
+            if (lineParts.size() > 1) throw std::runtime_error("Invalid number of arguments");
+            std::cout << errorno << std::endl;
+        }
+        else if (command == "mpwd") {
+            if (isHelpPrint(lineParts)) return;
+            if (lineParts.size() > 1) throw std::runtime_error("Invalid number of arguments");
+            std::cout << workingDir << std::endl;
+        }
+        else if (command == "mcd") {
+            if (isHelpPrint(lineParts)) return;
+            if (lineParts.size() > 2) throw std::runtime_error("Invalid number of arguments");
+            std::string dirPart = lineParts[1];
+            std::string newWorkingDir;
+            if (dirPart[0] == '/') newWorkingDir = dirPart;
+            else newWorkingDir = workingDir + "/" + dirPart;
+
+            boost::filesystem::path dir{newWorkingDir};
+            if (!boost::filesystem::is_directory(dir)) {
+                throw std::runtime_error("Path not a directory");
+            }
+            workingDir = dir.lexically_normal().string();
+            if (workingDir[workingDir.length() - 1] == '.')
+                workingDir = workingDir.substr(0, workingDir.length() - 1);
+            if (workingDir[workingDir.length() - 1] != '/')
+                workingDir += '/';
+        }
+        else if (command == "mexit") {
+            if (isHelpPrint(lineParts)) return;
+            if (lineParts.size() > 2) throw std::runtime_error("Invalid number of arguments");
+            int exitCode = 0;
+            if (lineParts.size() == 2) {
+                try {
+                    exitCode = std::stoi(lineParts[1]);
+                } catch(...) {
+                    throw std::runtime_error("Invalid argument provided");
+                }
+            }
+
+            _exit(exitCode);
+        }
+        else if (command == "mecho") {
+            for (size_t i = 1; i < lineParts.size(); ++i) {
+                std::cout << lineParts[i] << (i != lineParts.size() - 1 ? " " : "");
+            }
+            std::cout << std::endl;
+        }
+
+
+        else if (command.substr(0, 2) == "./") {
+            boost::filesystem::path path = boost::filesystem::path{workingDir + "/" + command};
+            if (!boost::filesystem::is_regular_file(path))
+                throw std::runtime_error("File not found: " + command);
+            std::string pathString = path.lexically_normal().string();
+            execute(pathString, lineParts);
+        }
+        else {
+            std::string fullCommand;
+
+            size_t directoryI = 0;
+            size_t prevDirectoryI = 0;
+            std::string path = envVariables["PATH"];
+
+            while (directoryI != path.length()) {
+                directoryI = path.find(':', prevDirectoryI);
+                if (directoryI == std::string::npos) directoryI = path.length();
+
+                std::string executable = path.substr(prevDirectoryI, directoryI - prevDirectoryI) + "/" + command;
+
+                if (!executable.empty() && boost::filesystem::is_regular_file(executable)) {
+                    fullCommand = boost::filesystem::path{executable}.lexically_normal().string();
+                }
+
+                prevDirectoryI = directoryI + 1;
+            }
+
+            if (fullCommand.empty()) {
+                throw std::runtime_error("Command not found");
+            }
+            execute(fullCommand, lineParts);
+        }
     }
 };
 
@@ -167,9 +371,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> res = expandWildCard("*");
 
     MyShell shell{};
-    std::string input;
-    std::getline(std::cin, input);
-    shell.executeSingleCommand(input);
+    shell.run();
 
     return 0;
 }
