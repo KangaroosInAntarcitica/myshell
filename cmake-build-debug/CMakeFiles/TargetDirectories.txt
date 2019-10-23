@@ -1,3 +1,0 @@
-/home/andriy/CppProjects/myshell/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/home/andriy/CppProjects/myshell/cmake-build-debug/CMakeFiles/myshell.dir
-/home/andriy/CppProjects/myshell/cmake-build-debug/CMakeFiles/edit_cache.dir
