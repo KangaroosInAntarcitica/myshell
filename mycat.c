@@ -77,7 +77,7 @@ int copy_file(int file_in, int file_out, char* buffer, size_t buffer_size, int f
 }
 
 int main(int argc, char** argv) {
-    char** filenames = malloc(argc - 1);
+    char** filenames = malloc((argc - 1) * sizeof(char*));
     int* files = malloc(sizeof(int) * (argc - 1));
     int filenum = 0;
     int help = 0;
@@ -149,6 +149,7 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < filenum; ++i) close(files[i]);
 
+    free(filenames);
     free(files);
     free(buffer);
 
