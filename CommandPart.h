@@ -12,9 +12,9 @@ struct CommandPart {
     char quotes = 0;
 
     CommandPart() = default;
-    CommandPart(char* string, char escape='\\'):
+    CommandPart(char* string, bool escape=true, char escapeChar='\\'):
         CommandPart(std::string(string), escape) {}
-    CommandPart(const std::string string, char escape='\\');
+    CommandPart(const std::string string, bool escape=true, char escapeChar='\\');
     size_t size();
     bool empty();
     char& operator[](size_t i);
@@ -24,7 +24,7 @@ struct CommandPart {
     size_t findEntering(char c);
     CommandPart subPart(size_t start, size_t end=std::string::npos);
     std::vector<CommandPart> splitEntering(char c);
-    std::vector<CommandPart> splitCommand(char separator=' ', char normalQuotes='"', char escapeQuotes='\'');
+    std::vector<CommandPart> splitCommand(char separator=' ');
     std::tuple<CommandPart, CommandPart> splitFirstEntering(char c);
 
     static CommandPart join(std::vector<CommandPart>& parts, char separator=' ');

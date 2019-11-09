@@ -3,8 +3,14 @@
 #include <iostream>
 
 
-CommandPart::CommandPart(const std::string string, char escape)
+CommandPart::CommandPart(const std::string string, bool escape, char escapeChar)
 {
+    if (!escape) {
+        this->string = string;
+        this->escaped = std::vector<bool>(string.length());
+        return;
+    }
+
     std::stringstream resultString;
     std::vector<bool> resultEscaped(string.length());
     size_t index = 0;
@@ -66,7 +72,7 @@ std::vector<CommandPart> CommandPart::splitEntering(char c) {
     return result;
 }
 
-std::vector<CommandPart> CommandPart::splitCommand(char separator, char normalQuotes, char escapeQuote) {
+std::vector<CommandPart> CommandPart::splitCommand(char separator) {
     std::vector<CommandPart> result;
     size_t startI = 0;
     char quotes = 0;
@@ -76,20 +82,23 @@ std::vector<CommandPart> CommandPart::splitCommand(char separator, char normalQu
         if (i == string.length() || (!quotes && string[i] == separator)) {
             if (i - startI > 0) result.push_back(subPart(startI, i));
             startI = i + 1;
-        } else if (string[i] == normalQuotes || string[i] == escapeQuote) {
-            if (quotes == string[i]) {
+        } else if (string[i] == '"' || string[i] == '\'' ||
+            (string[i] == '$' && i < string.length() && string[i+1] == '(') ||
+            (quotes == '$' && string[i] == ')'))
+        {
+            if (quotes == string[i] || (quotes == '$' && string[i] == ')')) {
                 CommandPart sub = subPart(startI, i);
                 sub.quotes = quotes;
-                if (string[i] == escapeQuote) {
+                if (string[i] == '\'') {
                     for (size_t i = 0; i < sub.escaped.size(); ++i) sub.escaped[i] = true;
                 }
                 result.push_back(sub);
-                startI = i + 1;
                 quotes = 0;
+                startI = i + 1;
             } else if (quotes == 0) {
                 if (i - startI > 0) result.push_back(subPart(startI, i));
-                startI = i + 1;
                 quotes = string[i];
+                startI = i + (quotes == '$' ? 2 : 1);
             }
         }
     }
