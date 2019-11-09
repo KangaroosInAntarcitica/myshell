@@ -98,7 +98,6 @@ struct Redirecting {
             changeDescriptor(redirect.first, redirect.second, saveBackwardRedirects);
         }
         redirects.clear();
-
     }
     void closeChild() {
         for (auto& fileToClose: filesToClose) {
@@ -165,7 +164,7 @@ public:
             try {
                 executeSingleLine(CommandPart{std::string(s)});
             } catch(std::exception &e) {
-                writeAll(STDERR_FILENO, e.what() + std::string("\n"));
+                std::cerr << e.what() << std::endl;
             }
 
             free(s);
@@ -174,7 +173,7 @@ public:
     }
     void run(std::string script) {
         if (!boost::filesystem::is_regular_file(script)) {
-           writeAll(STDERR_FILENO, "Could not find file: " + script + "\n");
+           std::cerr << "Could not find file: " << script << std::endl;
            return;
         }
         std::ifstream infile(script);
@@ -184,7 +183,7 @@ public:
             try {
                 executeSingleLine(CommandPart{s});
             } catch(std::exception &e) {
-                writeAll(STDERR_FILENO, e.what() + std::string("\n"));
+                std::cerr << e.what() << std::endl;
             }
         }
     }
@@ -248,7 +247,6 @@ public:
             value = envVariables[key];
             if (value.empty()) value = variables[key];
             if (!value.empty()) {
-                result.push_back(value);
                 CommandPart valuePart{value, false};
                 // expand the value
                 std::vector<CommandPart> subParts = valuePart.splitCommand();
@@ -320,7 +318,6 @@ public:
             redirecting.closeParent();
             redirecting.childPid = pid;
             redirecting.wait = wait;
-            errorno = errorno >> 8;
         }
         else {
             std::vector<std::string> args(arguments.size());
@@ -338,6 +335,7 @@ public:
             exit(1);
         }
     }
+
     void executeShellScript(CommandPart script, Redirecting& redirecting) {
         pid_t pid = fork();
         if (pid == -1) {
@@ -372,7 +370,6 @@ public:
         // Deal with all the redirects and pipes
         std::vector<CommandPart> currentCommandParts;
         Redirecting currentCommandRedirecting;
-        std::vector<int> openFiles{};
         std::vector<Redirecting> allRedirectings;
 
         try {
@@ -454,7 +451,6 @@ public:
                 finalRedirecting.merge(currentCommandRedirecting);
                 executeSingleCommand(currentCommandParts, finalRedirecting, true);
                 allRedirectings.push_back(finalRedirecting);
-                for (int fileD: openFiles) close(fileD);
             }
 
             // Perform the built-in commands
@@ -470,7 +466,7 @@ public:
                         // apply redirecting with ability to return back
                         redirecting.apply(true);
                         if (!redirecting.builtInStdOut.empty()) std::cout << redirecting.builtInStdOut;
-                        if (!redirecting.builtInStdErr.empty()) writeAll(STDERR_FILENO, redirecting.builtInStdErr);
+                        if (!redirecting.builtInStdErr.empty()) std::cerr << redirecting.builtInStdErr;
                         redirecting.revert();
                     }
                     // close all the files that should have been closed
@@ -480,9 +476,11 @@ public:
 
             // Wait for all other children
             for (auto& redirecting: allRedirectings) {
-                if (redirecting.wait) waitpid(redirecting.childPid, &errorno, 0);
+                if (redirecting.wait) {
+                    waitpid(redirecting.childPid, &errorno, 0);
+                    errorno = errorno >> 8;
+                }
             }
-
         } catch(...) {
             // close all possibly open files
             for (auto& redirecting: allRedirectings) redirecting.closeParent();
