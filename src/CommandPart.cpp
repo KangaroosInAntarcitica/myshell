@@ -15,7 +15,7 @@ CommandPart::CommandPart(const std::string string, bool escape, char escapeChar)
     std::vector<bool> resultEscaped(string.length());
     size_t index = 0;
     for (size_t i = 0; i < string.length(); ++i) {
-        if (i != string.length() - 1 && string[i] == escape) {
+        if (i != string.length() - 1 && string[i] == escapeChar) {
             resultString << string[++i];
             resultEscaped[index] = true;
         } else {

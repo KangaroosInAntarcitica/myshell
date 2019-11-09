@@ -33,17 +33,16 @@ std::string readAll(int filed) {
 }
 
 void writeAll(int filed, std::string message) {
-    int number_written;
+    int number_written = 0;
 
-    while(true) {
+    while(number_written < message.length()) {
         errno = 0;
-        int current_number_written = write(filed, message.c_str(), (message.length() - number_written));
+        int current_number_written = write(filed, &(message.c_str()[number_written]), message.length() - number_written);
         if (current_number_written < 0) {
-            if (errno == EINTR) continue;
-            throw std::runtime_error("Cannot write to given file!");
+            if (errno != EINTR) throw std::runtime_error("Cannot write to given file!");
+        } else {
+            number_written += current_number_written;
         }
-        number_written += current_number_written;
-        if (number_written == message.length()) break;
     }
 }
 

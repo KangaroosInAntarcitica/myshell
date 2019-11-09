@@ -18,8 +18,6 @@
 #include "redirectsParser.h"
 #include "system_read_write.h"
 
-struct ignore_error: std::exception {};
-
 char** convertToCArgs(const std::vector<std::string>& variables) {
     char** result = new char*[variables.size() + 1];
 
@@ -514,7 +512,7 @@ public:
             lineParts.erase(lineParts.begin());
             assignVariable(lineParts, envVariables);
         }
-        else if (lineParts.size() > 1 && lineParts[1] == "=") {
+        else if (lineParts.size() > 1 && lineParts[1] == "=" && !lineParts[1].escaped[0]) {
             redirecting.isBuiltIn = true;
             if (lineParts.size() > 3) {
                 redirecting.builtInStdErr = "Invalid number of arguments";

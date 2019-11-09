@@ -1,9 +1,4 @@
-#ifndef MYSHELL_REDIRECTSPARSER_H
-#define MYSHELL_REDIRECTSPARSER_H
-
-#include <vector>
-#include <tuple>
-#include "CommandPart.h"
+#include "redirectsParser.h"
 
 bool isRedirect(CommandPart command) {
     size_t i = 0;
@@ -22,7 +17,7 @@ bool isRedirect(CommandPart command) {
     return true;
 }
 
-std::tuple<int, int, int> parseRedirect(CommandPart command, int defaultOut = 1, int defaultIn = 0) {
+std::tuple<int, int, int> parseRedirect(CommandPart command, int defaultOut, int defaultIn) {
     int from = -1, direction = 0, to = -1;
 
     size_t i = 0;
@@ -46,4 +41,3 @@ std::tuple<int, int, int> parseRedirect(CommandPart command, int defaultOut = 1,
     return std::make_tuple(from, direction, to);
 }
 
-#endif //MYSHELL_REDIRECTSPARSER_H
