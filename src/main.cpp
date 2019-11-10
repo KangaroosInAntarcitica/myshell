@@ -57,6 +57,26 @@ int callSystem(std::string errorString, int(* sysCall)(Args...), Args... args) {
     return result;
 }
 
+int openSystem(std::string errorString, const char *pathname, int flags, mode_t mode=0) {
+    int result;
+    errno = 0;
+    while ((result = open(pathname, flags, mode)) < 0) {
+        if (errno != EINTR) throw std::runtime_error(errorString);
+        errno = 0;
+    }
+    return result;
+}
+
+int waitSystem(int pid, int& errorno) {
+    int result;
+    errno = 0;
+    while ((result = waitpid(pid, &errorno, 0)) < 0) {
+        if (errno != EINTR) break;
+        errno = 0;
+    }
+    return result;
+}
+
 struct Redirecting {
     std::map<int, int> redirects;
     std::vector<int> filesToClose;
@@ -408,16 +428,15 @@ public:
                         if (i == lineParts.size() - 1)
                             throw std::invalid_argument("No redirect target/source specified");
                         if (direction == -1) {
-                            int fd = open(lineParts[++i].string.c_str(), O_RDONLY);
-                            if (fd < 0) {
-                                throw std::runtime_error("Cannot open file " + lineParts[i].string);
-                            }
+                            ++i;
+                            int fd = openSystem("Cannot open file " + lineParts[i].string, lineParts[i].string.c_str(), O_RDONLY);
                             currentCommandRedirecting.addParentFileToClose(fd);
                             currentCommandRedirecting.set(from, fd);
                             currentCommandRedirecting.addFileToClose(fd);
                         } else {
-                            int fd = open(lineParts[++i].string.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
-                                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+                            ++i;
+                            int fd = openSystem("Cannot open file " + lineParts[i].string, lineParts[i].string.c_str(),
+                                                O_WRONLY|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                             if (fd < 0) throw std::runtime_error("Cannot open file " + lineParts[i].string);
                             currentCommandRedirecting.addParentFileToClose(fd);
                             currentCommandRedirecting.set(from, fd);
@@ -475,7 +494,7 @@ public:
             // Wait for all other children
             for (auto& redirecting: allRedirectings) {
                 if (redirecting.wait) {
-                    waitpid(redirecting.childPid, &errorno, 0);
+                    waitSystem(redirecting.childPid, errorno);
                     errorno = errorno >> 8;
                 }
             }
